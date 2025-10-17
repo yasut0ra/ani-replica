@@ -1,163 +1,207 @@
 
-# Codex Project Prompt — ani-replica (grok ani inspired)
+# Codex Project Prompt — ani-replica (ani/grok inspired)
 
-> Purpose: Implement a minimal but extensible “ani” companion app.
-> Stack: FastAPI (backend), HTMX (frontend), LinUCB (bandit), VOICEVOX (TTS hook), whisper.cpp hook (later).
-> Goal this session: Replace stub reply with a real LLM, finish the chat loop + bandit + UI to a working quality. Make it runnable via Docker and pass lint/tests.
-
----
-
-## You are a coding agent
-- Work in small commits.
-- Avoid breaking changes; keep diffs minimal.
-- After each task, self‑review with quick manual run + pytest + ruff.
+> Purpose: Build a minimal yet extensible Grok “ani”-style companion: fast, warm, topic-aware, and easy to iterate on.
+> Tech Stack: FastAPI + HTMX frontend, LinUCB bandit, VOICEVOX TTS hook (optional), later whisper.cpp.
+> Current Goal: Replace the stub reply with a robust LLM-driven loop, tighten prompts, harden the backend, and ship a Docker-friendly build.
 
 ---
 
-## Repo layout (already present)
-ani-replica/
-  backend/app/
-    main.py
-    bandit/linucb.py
-    ani/prompt.py        <- LLM reply integration point
-    ani/state.py
-    ani/reward.py
-    tts/client.py        <- VOICEVOX hook (optional this round)
-  backend/tests/test_linucb.py
-  frontend/index.html    <- HTMX UI
-  requirements.txt
-  Dockerfile
-  docker-compose.yml
-  Makefile
-  README.md
-
-Run locally with: make dev  (open http://localhost:8000)
-Run with Docker: docker compose up --build
+## Vision & Product Pillars
+- Capture Ani’s playful curiosity: short, upbeat answers that gently reflect the user’s focus.
+- Keep the loop lightweight: single-turn interactions augmented by topic bandits, no heavy history yet.
+- Ship a workshop-friendly codebase: clear modules, fast feedback, and simple integration points.
+- Guard rails: never block the UI; always fall back to a safe response when external services misbehave.
 
 ---
 
-## Tasks (required)
+## Experience Guidelines
+- **Tone ladder (affection score)**  
+  - `< 3`: neutral cheer, matter-of-fact but polite.  
+  - `3–6`: warm encouragement, sprinkle a friendly emoji only when it fits.  
+  - `>= 7`: excited hype, higher energy yet still concise.
+- **Reply format**  
+  - 1–3 sentences, ≤ 2 line breaks.  
+  - Mirror the user’s key point in one short phrase.  
+  - End with exactly one follow-up question when it progresses the chat; otherwise none.  
+  - At most one emoji throughout the reply.
+- **Topic awareness**: Include the active topic label in the prompt narrative so the model understands context without a full transcript.
+- **Safety fallback**: When anything fails (missing key, HTTP/JSON error, timeout), revert to a deterministic stub reply that respects the above rules.
 
-T1. Implement real LLM reply (stub -> prod)
-- Where: backend/app/ani/prompt.py
-- Replace reply_stub() with reply_llm(system, user, topic) and call it from /chat in main.py.
-- Read API key and model from env vars (e.g., OPENAI_API_KEY, MODEL_NAME).
-- Constraints for output:
-  - 1–3 sentences, slightly warm (tone modulated by affection).
-  - End with exactly one short follow-up question when appropriate.
-  - 0–1 emoji.
-- Acceptance:
-  - If no API key, safely fall back to stub (no crash).
-  - One retry on transient HTTP errors; then fall back to stub.
-  - Prompt includes system_prompt(affection=...) and the chosen topic.
+---
 
-T2. Strengthen system prompt (ani flavor)
-- Where: backend/app/ani/prompt.py::system_prompt
-- Switch tone by affection into: neutral / warm / excited (e.g., thresholds 3 and 7).
-- Rules:
-  - Be concise and positive; avoid over‑praise; ask max one question.
-  - Mirror the user’s main point in one short phrase to build alignment.
-- Acceptance: sample outputs differ clearly across the three tones.
+## Architecture Snapshot
+- `backend/app/main.py`: FastAPI app, `/chat` endpoint, state persistence, HTMX partials.
+- `backend/app/ani/prompt.py`: System prompt factory, reply stub + LLM bridge.
+- `backend/app/ani/state.py`: Persists affection, selected topics, recent turns to `state.json`.
+- `backend/app/bandit/linucb.py`: Topic selection via LinUCB multi-armed bandit.
+- `backend/app/ani/reward.py`: Reward calculation hooks for bandit updates.
+- `backend/app/tts/client.py`: VOICEVOX interface (optional this round).
+- `frontend/index.html`: HTMX-driven chat UI.
 
-T3. Harden the chat loop
-- Where: backend/app/main.py
+Environment variables:
+- `OPENAI_API_KEY` – required for live LLM mode.
+- `MODEL_NAME` – default `gpt-4o-mini`; allow overrides without code changes.
+- Leave VOICEVOX config unset by default; the backend must still boot.
+
+---
+
+## Roadmap (current sprint)
+1. **LLM Core**  
+   - Introduce `reply_llm(system, user, topic)` with retry + fallback.  
+   - Generate prompts using the affection-aware system persona.
+2. **Prompt & Tone Craft**  
+   - Expand `system_prompt()` to map affection buckets into distinct behaviors.  
+   - Document sample outputs per bucket for quick manual QA.
+3. **Reliability Pass**  
+   - Make `/chat` resilient: return 200 + stub output on any failure path.  
+   - Ensure state persistence never corrupts the JSON file.
+4. **Confidence & Tests**  
+   - Strengthen LinUCB coverage (edge params, updates, reward signal).  
+   - Keep `pytest -q` and `ruff` happy at every checkpoint.
+5. **Docker Readiness**  
+   - Verify `docker compose up --build` on Apple Silicon (no VOICEVOX dependency).  
+   - Document any arch-specific tweaks in `README.md` if required.
+
+---
+
+## Task Board
+
+### T1 — LLM Reply Pipeline
+- File: `backend/app/ani/prompt.py`
+- Replace `reply_stub()` usage with `reply_llm(system, user, topic)` exposed to `main.py`.
+- Behavior:
+  - Read `OPENAI_API_KEY` / `MODEL_NAME` from env. If key missing → call `reply_stub`.
+  - Compose messages with `system_prompt(affection)` and a user payload like `[Topic: <label>] <text>`.
+  - Use `httpx` (already in deps) with 30s timeout; retry once on 429/5xx/timeouts.
+  - Strip result, validate non-empty; otherwise fall back.
+
+### T2 — System Prompt Overhaul
+- File: `backend/app/ani/prompt.py::system_prompt`
+- Implement affection buckets: neutral (<3), warm (3–6), excited (>=7).
+- Each persona must:
+  - Be upbeat but concise, never grovel or over-praise.
+  - Mirror the user’s main point in a micro-acknowledgement.
+  - Ask at most one question in the actual reply (model instruction).
+- Provide helper docstrings/comments for future tuning.
+
+### T3 — Chat Loop Hardening
+- File: `backend/app/main.py`
 - Requirements:
-  - /chat returns 200 even on internal exceptions (falls back to stub).
-  - state.json never corrupts; save() swallows I/O exceptions.
-- Acceptance: forced exceptions don’t crash the app; UI keeps updating.
+  - Wrap `/chat` handler in try/except: log error, fall back to stub response, return 200.
+  - Ensure `state.save()` catches and logs I/O errors without throwing; never leaves partial files.
+  - Keep HTMX partial rendering responsive even when the LLM fails.
 
-T4. Expand LinUCB tests
-- Where: backend/tests/test_linucb.py
-- Add 2–3 more tests: parameter edge cases, post‑update state sanity.
-- Acceptance: pytest -q is green.
+### T4 — LinUCB Test Suite
+- File: `backend/tests/test_linucb.py`
+- Add 2–3 tests covering:
+  - Edge parameter validation (e.g., alpha=0, cold-start arms).  
+  - Post-update invariants (matrix symmetry, weight vector).  
+  - Reward extremes (negative / >1) if applicable.
+- Maintain fast runtime; avoid randomness or seed it.
 
-T5. Docker stability
-- Ensure docker compose up --build works on Apple Silicon for backend.
-- VOICEVOX may be disabled; backend must still run.
-- Acceptance: open http://localhost:8000 after compose build.
-
----
-
-## Optional tasks
-
-O1. VOICEVOX endpoint
-- Add /tts to synth text -> wav (bytes or base64).
-- Add <audio> to the UI (no auto‑play).
-
-O2. Topic auto‑generation
-- Use the LLM to propose 3 concise titles per turn.
-- Reuse state.current_context() mapping for simple bandit contexts.
-
-O3. Metrics
-- Add /metrics JSON with: turns_total, affection, avg_reply_chars, etc.
+### T5 — Docker Stability
+- Ensure `docker compose up --build` works on Apple Silicon without VOICEVOX.
+- Confirm backend serves `http://localhost:8000`.
+- Document any env vars required for local LLM testing.
 
 ---
 
-## Implementation details
-
-Prompts
-- system_prompt(affection) defines personality/tone/style only.
-- Provide user + topic; do not pass long history for now.
-- Output must be brief; no more than two line breaks.
-
-Error handling
-- One retry for LLM calls; on failure, return stub.
-- Swallow JSON/HTTP exceptions; keep UI responsive.
-
-Code quality
-- Pass ruff check and ruff format.
-- Keep type hints minimal (public interfaces).
+## Optional Enhancements
+- **O1 — VOICEVOX Endpoint**: Add `/tts` returning WAV bytes/base64; extend HTMX UI with `<audio>` (manual playback).
+- **O2 — Topic Auto-Suggestion**: Use the LLM to draft three short topic titles per turn using bandit contexts.
+- **O3 — Metrics Endpoint**: `/metrics` JSON with `turns_total`, `affection`, `avg_reply_chars`, bandit pulls, etc.
 
 ---
 
-## How to run (dev)
-make dev
-# open http://localhost:8000
-pytest -q
-ruff check . && ruff format .
-
-## How to run (Docker)
-docker compose up --build
-# open http://localhost:8000
-
----
-
-## Acceptance checklist (Done for this round)
-- [/chat] replies via LLM; safe fallback without key
-- system_prompt changes tone across 3 levels
-- app doesn’t crash; UI keeps updating
-- pytest is green; ruff passes
-- docker compose brings up a working backend
+## Implementation Details & Guard Rails
+- Prompting:
+  - `system_prompt(affection)` defines persona only; keep user content separate.
+  - Do not feed long history yet; rely on topic tag + latest message.
+  - Enforce brevity and question rule in final text (trim trailing punctuation).
+- Error Handling:
+  - Wrap JSON parsing; log + fallback on malformed payloads.
+  - Retry once on transient HTTP failures; respect non-200 codes gracefully.
+- Code Quality:
+  - Run `pytest -q` before handoff.
+  - `ruff check .` and `ruff format .` must pass; keep type hints lightweight.
+  - Prefer dependency-free solutions unless justified.
 
 ---
 
-## Hint: OpenAI pseudo-implementation
-# (Adjust endpoint/model as needed; keep deps minimal)
-import os, httpx
-def reply_llm(system, user, topic):
+## Example Loop (for manual QA)
+1. User picks a topic `stargazing` (bandit selects arm).  
+2. User message: “最近また星を見に行きたいんだよね。”  
+3. System prompt (warm bucket) steers model to mirror “星を見に行きたい” and end with a curious question.  
+4. Reply target: “星を見たい気持ち、きっと夜空もワクワクしてるよ。今度はどの方角から眺めたい？🌌”  
+5. Reward computed, bandit updates preference.
+
+---
+
+## Commands & Local Workflow
+- `make dev` → run FastAPI + HTMX dev server (open http://localhost:8000).
+- `pytest -q` → run backend tests.
+- `ruff check . && ruff format .` → lint & format.
+- `docker compose up --build` → full stack container build (Apple Silicon compatible).
+- Work in small commits; verify before each push; document regressions in TODOs if needed.
+
+---
+
+## Acceptance Checklist
+- `/chat` returns LLM-powered replies with safe fallback and tone control.
+- System prompt visibly shifts style across neutral/warm/excited.
+- Backend survives forced failures; UI remains responsive.
+- `pytest -q` and `ruff` succeed locally.
+- `docker compose up --build` launches a working backend on Apple Silicon.
+
+---
+
+## OpenAI Client Sketch (reference only)
+```python
+import os
+import httpx
+
+def reply_llm(system: str, user: str, topic: str) -> str:
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
         return reply_stub(system, user, topic)
+    payload = {
+        "model": os.getenv("MODEL_NAME", "gpt-4o-mini"),
+        "messages": [
+            {"role": "system", "content": system},
+            {"role": "user", "content": f"[Topic: {topic}] {user}"},
+        ],
+        "temperature": 0.7,
+        "max_tokens": 160,
+    }
     try:
-        with httpx.Client(timeout=30) as c:
-            r = c.post(
+        with httpx.Client(timeout=30) as client:
+            response = client.post(
                 "https://api.openai.com/v1/chat/completions",
                 headers={"Authorization": f"Bearer {api_key}"},
-                json={
-                    "model": os.getenv("MODEL_NAME","gpt-4o-mini"),
-                    "messages": [
-                        {"role":"system","content": system},
-                        {"role":"user","content": f"[Topic:{topic}] {user}"}
-                    ],
-                    "temperature": 0.7,
-                    "max_tokens": 160
-                },
+                json=payload,
             )
-            r.raise_for_status()
-            return r.json()["choices"][0]["message"]["content"].strip()
+            response.raise_for_status()
+            content = response.json()["choices"][0]["message"]["content"].strip()
+            return content or reply_stub(system, user, topic)
+    except httpx.RequestError:
+        # Retry once on network issues.
+        try:
+            with httpx.Client(timeout=30) as client:
+                response = client.post(
+                    "https://api.openai.com/v1/chat/completions",
+                    headers={"Authorization": f"Bearer {api_key}"},
+                    json=payload,
+                )
+                response.raise_for_status()
+                content = response.json()["choices"][0]["message"]["content"].strip()
+                return content or reply_stub(system, user, topic)
+        except Exception:
+            return reply_stub(system, user, topic)
     except Exception:
         return reply_stub(system, user, topic)
+```
 
 ---
 
-Proceed. Commit small, verify often.
+Proceed in small, verified steps. Keep Ani delightful and resilient.***
