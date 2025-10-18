@@ -1,0 +1,15 @@
+version: "3.11"
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - MODEL_NAME=${MODEL_NAME:-gpt-4o-mini}
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend/app/state.json:/app/backend/app/state.json:delegated
+    restart: unless-stopped
