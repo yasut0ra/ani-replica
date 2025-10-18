@@ -143,6 +143,7 @@ venv/
 ENV/
 env.bak/
 venv.bak/
+backend/app/state.json
 
 # Spyder project settings
 .spyderproject
