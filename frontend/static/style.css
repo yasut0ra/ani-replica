@@ -1,0 +1,82 @@
+body {
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  margin: 0;
+  padding: 0;
+  background: #f4f6fb;
+  color: #1f2933;
+}
+
+.container {
+  max-width: 640px;
+  margin: 40px auto;
+  padding: 24px;
+  background: #ffffff;
+  border-radius: 12px;
+  box-shadow: 0 12px 24px rgba(15, 23, 42, 0.12);
+}
+
+h1 {
+  margin-top: 0;
+  font-size: 1.8rem;
+  text-align: center;
+}
+
+.chat-box {
+  min-height: 200px;
+  max-height: 360px;
+  overflow-y: auto;
+  border: 1px solid #d8dee9;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 20px;
+  background: linear-gradient(180deg, #f9fbff 0%, #ffffff 100%);
+}
+
+.message {
+  margin-bottom: 12px;
+}
+
+.message .label {
+  font-weight: 600;
+  margin-right: 8px;
+}
+
+form {
+  display: grid;
+  gap: 12px;
+}
+
+label {
+  font-weight: 600;
+}
+
+input,
+textarea {
+  width: 100%;
+  padding: 10px;
+  border: 1px solid #cbd5f5;
+  border-radius: 6px;
+  font-size: 1rem;
+  font-family: inherit;
+  box-sizing: border-box;
+}
+
+button {
+  background: #3b82f6;
+  color: #ffffff;
+  font-weight: 600;
+  border: none;
+  border-radius: 6px;
+  padding: 12px;
+  cursor: pointer;
+  transition: background 0.2s ease-in-out;
+}
+
+button:hover {
+  background: #2563eb;
+}
+
+button:disabled {
+  background: #93c5fd;
+  cursor: not-allowed;
+}
