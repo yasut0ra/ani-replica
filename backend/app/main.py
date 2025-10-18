@@ -4,7 +4,11 @@ from __future__ import annotations
 
 import logging
 
+from pathlib import Path
+
 from fastapi import FastAPI
+from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from .ani.prompt import reply_llm, reply_stub, system_prompt
@@ -13,6 +17,8 @@ from .ani.state import ConversationState
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="ani-replica")
+static_path = Path(__file__).resolve().parent.parent.parent / "frontend" / "static"
+app.mount("/static", StaticFiles(directory=static_path), name="static")
 state = ConversationState.load()
 
 
@@ -53,3 +59,10 @@ async def chat(request: ChatRequest) -> ChatResponse:
         except Exception:
             logger.debug("State save failed during fallback handling.")
         return ChatResponse(reply=fallback)
+
+
+@app.get("/", response_class=HTMLResponse)
+async def index() -> HTMLResponse:
+    """Serve the basic chat UI."""
+    index_path = Path(__file__).resolve().parent.parent.parent / "frontend" / "index.html"
+    return FileResponse(index_path)
